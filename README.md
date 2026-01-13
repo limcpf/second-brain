@@ -41,6 +41,33 @@ SYNC_IMAGE=obsidian-livesync-client:latest
 SYNC_WAIT_SECONDS=180
 ```
 
+## 추가 설정(app.*)
+`application.properties` 또는 `application-prod.properties`에 다음과 같이 설정합니다.
+```
+app.openai.api-key=${OPENAI_API_KEY}
+app.openai.model=${openai.model}
+app.openai.temperature=${openai.temperature}
+
+app.paths.vault-path=${VAULT_PATH}
+app.paths.template-path=${TEMPLATE_PATH}
+app.google.credential-path=${GOOGLE_CREDENTIAL_PATH}
+
+app.docker.host=${DOCKER_HOST}
+app.docker.image=${SYNC_IMAGE}
+app.docker.sync-wait-seconds=${SYNC_WAIT_SECONDS}
+
+app.idempotency.path=/app/data/idempotency.log
+app.idempotency.ttl-hours=24
+```
+
+## 신뢰성/관측성 강화
+- 입력 스키마 검증 및 잘못된 요청 차단
+- 중복 처리 방지를 위한 idempotency 저장
+- LLM/Google API 재시도(백오프) 적용
+- RabbitMQ DLQ 설정으로 실패 메시지 격리
+- MDC 기반 상관관계 ID 로깅
+- Readiness 헬스체크 제공
+
 ## 주요 경로
 - `src/main/java/com/my/brain/domain/...`
 - `src/main/java/com/my/brain/adapter/in/rabbitmq/RabbitMessageConsumer`
