@@ -1,0 +1,13 @@
+/target/
+/.idea/
+/.vscode/
+/.DS_Store
+*.log
+.env
+.mvn/wrapper/maven-wrapper.jar
+/target/
+/src/main/java/target/
+.classpath
+.project
+.factorypath
+.settings/
