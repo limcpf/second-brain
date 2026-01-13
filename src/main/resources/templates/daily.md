@@ -1,0 +1,7 @@
+---
+title: {{date}}
+---
+
+## Tasks
+
+## Logs
