@@ -1,7 +1,7 @@
 package com.my.brain.adapter.in.idempotency;
 
 import com.my.brain.config.AppConfig;
-import io.quarkus.arc.profile.IfBuildProfile;
+import io.quarkus.arc.properties.IfBuildProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.time.Duration;
@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-@IfBuildProfile("dev")
+@IfBuildProperty(name = "app.idempotency.backend", stringValue = "memory")
 @ApplicationScoped
 public class InMemoryIdempotencyStore implements IdempotencyStore {
 

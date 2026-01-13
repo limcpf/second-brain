@@ -49,9 +49,17 @@ public interface AppConfig {
     }
 
     interface IdempotencyConfig {
+        @WithName("backend")
+        @WithDefault("sqlite")
+        String backend();
+
         @WithName("path")
         @WithDefault("./data/idempotency.log")
         String path();
+
+        @WithName("sqlite-path")
+        @WithDefault("./data/idempotency.db")
+        String sqlitePath();
 
         @WithName("ttl-hours")
         @WithDefault("24")

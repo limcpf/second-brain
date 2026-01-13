@@ -2,25 +2,55 @@ package com.my.brain.adapter.in.idempotency;
 
 import com.my.brain.config.AppConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.sqlite.SQLiteDataSource;
 
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class InMemoryIdempotencyStoreTest {
+class SqliteIdempotencyStoreTest {
+
+    @TempDir
+    Path tempDir;
 
     @Test
-    void marksAndDetectsProcessedEvent() {
-        InMemoryIdempotencyStore store = new InMemoryIdempotencyStore(new TestConfig());
+    void storesAndCleansWithTtl() throws Exception {
+        Path dbPath = tempDir.resolve("idempotency.db");
+        SQLiteDataSource dataSource = new SQLiteDataSource();
+        dataSource.setUrl("jdbc:sqlite:" + dbPath.toAbsolutePath());
+
+        SqliteIdempotencyStore store = new SqliteIdempotencyStore(dataSource, new TestConfig(dbPath));
+        store.init();
 
         assertThat(store.isProcessed("evt-1")).isFalse();
 
         store.markProcessed("evt-1");
-
         assertThat(store.isProcessed("evt-1")).isTrue();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement("UPDATE idempotency_log SET processed_at = ? WHERE event_id = ?")) {
+            long past = Instant.now().minusSeconds(4000).toEpochMilli();
+            ps.setLong(1, past);
+            ps.setString(2, "evt-1");
+            ps.executeUpdate();
+        }
+
+        assertThat(store.isProcessed("evt-1")).isFalse();
     }
 
     private static class TestConfig implements AppConfig {
+
+        private final Path sqlitePath;
+
+        private TestConfig(Path sqlitePath) {
+            this.sqlitePath = sqlitePath;
+        }
+
         @Override
         public OpenAiConfig openai() {
             return new OpenAiConfig() {
@@ -62,30 +92,29 @@ class InMemoryIdempotencyStoreTest {
         }
 
         @Override
-         public IdempotencyConfig idempotency() {
-             return new IdempotencyConfig() {
-                 @Override
-                 public String backend() {
-                     return "memory";
-                 }
+        public IdempotencyConfig idempotency() {
+            return new IdempotencyConfig() {
+                @Override
+                public String backend() {
+                    return "sqlite";
+                }
 
-                 @Override
-                 public String path() {
-                     return "./data/idempotency.log";
-                 }
+                @Override
+                public String path() {
+                    return "./data/idempotency.log";
+                }
 
-                 @Override
-                 public String sqlitePath() {
-                     return "./data/idempotency.db";
-                 }
+                @Override
+                public String sqlitePath() {
+                    return sqlitePath.toString();
+                }
 
-                 @Override
-                 public int ttlHours() {
-                     return 1;
-                 }
-             };
-         }
-
+                @Override
+                public int ttlHours() {
+                    return 1;
+                }
+            };
+        }
 
         @Override
         public DockerConfig docker() {

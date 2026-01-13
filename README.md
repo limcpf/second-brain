@@ -56,17 +56,32 @@ app.docker.host=${DOCKER_HOST}
 app.docker.image=${SYNC_IMAGE}
 app.docker.sync-wait-seconds=${SYNC_WAIT_SECONDS}
 
+app.idempotency.backend=sqlite
 app.idempotency.path=/app/data/idempotency.log
+app.idempotency.sqlite-path=/app/data/idempotency.db
 app.idempotency.ttl-hours=24
+
+# SQLite datasource (예시)
+quarkus.datasource.db-kind=sqlite
+quarkus.datasource.jdbc.url=jdbc:sqlite:${app.idempotency.sqlite-path}?journal_mode=WAL&synchronous=NORMAL
+quarkus.datasource.jdbc.min-size=1
+quarkus.datasource.jdbc.max-size=2
 ```
 
 ## 신뢰성/관측성 강화
 - 입력 스키마 검증 및 잘못된 요청 차단
-- 중복 처리 방지를 위한 idempotency 저장
+- 중복 처리 방지를 위한 idempotency 저장 (memory/file/sqlite 선택, 기본 sqlite)
 - LLM/Google API 재시도(백오프) 적용
-- RabbitMQ DLQ 설정으로 실패 메시지 격리
+- RabbitMQ DLQ 설정 + DLQ 소비자로 실패 메시지 격리/가시화
 - MDC 기반 상관관계 ID 로깅
 - Readiness 헬스체크 제공
+
+## Docker 빌드/배포 자동화 (GitHub Actions)
+- 브랜치: `main` push 시 자동 트리거
+- 이미지: `daeseong0226/second-brain:latest` (linux/amd64)
+- 워크플로우: `.github/workflows/docker-publish.yml`
+- Secrets 필요: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
+- Dockerfile: 루트 `Dockerfile` (멀티스테이지, Maven 빌드 → slim JRE 런타임)
 
 ## 주요 경로
 - `src/main/java/com/my/brain/domain/...`
