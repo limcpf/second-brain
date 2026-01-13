@@ -8,9 +8,11 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
+import com.my.brain.config.AppConfig;
 import com.my.brain.domain.port.out.DockerPort;
 import io.quarkus.arc.profile.IfBuildProfile;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
@@ -25,9 +27,12 @@ public class ProdDockerAdapter implements DockerPort {
     private static final Logger log = Logger.getLogger(ProdDockerAdapter.class);
     private static final int DEFAULT_TIMEOUT_SECONDS = 180;
     private final DockerClient dockerClient;
+    private final AppConfig.DockerConfig dockerConfig;
 
-    public ProdDockerAdapter() {
-        String host = System.getenv().getOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock");
+    @Inject
+    public ProdDockerAdapter(AppConfig appConfig) {
+        this.dockerConfig = appConfig.docker();
+        String host = dockerConfig.host();
         var config = DefaultDockerClientConfig.createDefaultConfigBuilder()
                 .withDockerHost(host)
                 .build();
@@ -43,8 +48,8 @@ public class ProdDockerAdapter implements DockerPort {
 
     @Override
     public String runSyncContainer() {
-        String image = System.getenv().getOrDefault("SYNC_IMAGE", "obsidian-livesync-client:latest");
-        int waitSeconds = Integer.parseInt(System.getenv().getOrDefault("SYNC_WAIT_SECONDS", String.valueOf(DEFAULT_TIMEOUT_SECONDS)));
+        String image = dockerConfig.image();
+        int waitSeconds = dockerConfig.syncWaitSeconds();
         CreateContainerResponse container = dockerClient.createContainerCmd(image)
                 .withCmd("sh", "-c", "sleep " + waitSeconds)
                 .exec();

@@ -1,9 +1,11 @@
 package com.my.brain.adapter.out.filesystem;
 
+import com.my.brain.config.AppConfig;
 import com.my.brain.domain.model.BrainRequest;
 import com.my.brain.domain.model.Note;
 import com.my.brain.domain.port.out.FilePort;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -25,9 +27,10 @@ public class FileSystemAdapter implements FilePort {
     private final Path vaultRoot;
     private final Path templateRoot;
 
-    public FileSystemAdapter() {
-        this.vaultRoot = Path.of(System.getenv().getOrDefault("VAULT_PATH", "./data/vault"));
-        this.templateRoot = Path.of(System.getenv().getOrDefault("TEMPLATE_PATH", "src/main/resources/templates"));
+    @Inject
+    public FileSystemAdapter(AppConfig appConfig) {
+        this.vaultRoot = Path.of(appConfig.paths().vaultPath());
+        this.templateRoot = Path.of(appConfig.paths().templatePath());
     }
 
     @Override
