@@ -1,9 +1,10 @@
 package com.my.brain.domain.service;
 
+import com.my.brain.domain.exception.GoogleCredentialNotFoundException;
 import com.my.brain.domain.exception.IntentParseException;
 import com.my.brain.domain.model.BrainRequest;
-import com.my.brain.domain.model.IntentType;
 import com.my.brain.domain.model.LlmIntentResult;
+import com.my.brain.domain.model.MessageType;
 import com.my.brain.domain.model.Note;
 import com.my.brain.domain.model.ReplyMessage;
 import com.my.brain.domain.port.in.ProcessMessageUseCase;
@@ -42,6 +43,9 @@ public class ProcessMessageService implements ProcessMessageUseCase {
 
     @Override
     public ReplyMessage process(BrainRequest request) {
+        if (isAuthCommand(request)) {
+            return handleAuthCommand(request);
+        }
         // LLM으로 의도 파싱
         LlmIntentResult intentResult = llmPort.parseIntent(request);
         if (intentResult == null) {
@@ -61,29 +65,38 @@ public class ProcessMessageService implements ProcessMessageUseCase {
         if (intentResult.calendarEvent() == null) {
             throw new IntentParseException("캘린더 이벤트 정보가 없습니다.");
         }
-        // 노트 선 생성 후 링크 삽입을 위해 파일 시스템 작업
-        Note meetingNote = filePort.createMeetingNote(
-                filePort.ensureDailyNote(request),
-                intentResult.calendarEvent().summary(),
-                intentResult.calendarEvent().description()
-        );
-        filePort.linkMeetingNote(filePort.ensureDailyNote(request), meetingNote);
-
-        // 구글 캘린더 등록 시 노트 링크 삽입
-        googlePort.createCalendarEvent(intentResult.calendarEvent());
-        ReplyMessage reply = buildReply(request.userId(), "✅ 일정이 등록되었습니다. (관련 노트: " + meetingNote.title() + ")");
-        replyPort.send(reply);
-        return reply;
+        try {
+            Note meetingNote = filePort.createMeetingNote(
+                    filePort.ensureDailyNote(request),
+                    intentResult.calendarEvent().summary(),
+                    intentResult.calendarEvent().description()
+            );
+            filePort.linkMeetingNote(filePort.ensureDailyNote(request), meetingNote);
+            googlePort.createCalendarEvent(intentResult.calendarEvent());
+            ReplyMessage reply = buildReply(request.userId(), "✅ 일정이 등록되었습니다. (관련 노트: " + meetingNote.title() + ")");
+            replyPort.send(reply);
+            return reply;
+        } catch (GoogleCredentialNotFoundException e) {
+            ReplyMessage reply = buildReply(request.userId(), "🔐 Google 인증이 필요합니다. 링크: " + e.authUrl() + "\n승인 후 /auth <코드> 로 전송해주세요.");
+            replyPort.send(reply);
+            return reply;
+        }
     }
 
     private ReplyMessage handleTask(BrainRequest request, LlmIntentResult intentResult) {
         if (intentResult.todoItem() == null) {
             throw new IntentParseException("할 일 정보가 없습니다.");
         }
-        googlePort.createTask(intentResult.todoItem(), request.content());
-        ReplyMessage reply = buildReply(request.userId(), "✅ 할 일이 등록되었습니다.");
-        replyPort.send(reply);
-        return reply;
+        try {
+            googlePort.createTask(intentResult.todoItem(), request.content());
+            ReplyMessage reply = buildReply(request.userId(), "✅ 할 일이 등록되었습니다.");
+            replyPort.send(reply);
+            return reply;
+        } catch (GoogleCredentialNotFoundException e) {
+            ReplyMessage reply = buildReply(request.userId(), "🔐 Google 인증이 필요합니다. 링크: " + e.authUrl() + "\n승인 후 /auth <코드> 로 전송해주세요.");
+            replyPort.send(reply);
+            return reply;
+        }
     }
 
     private ReplyMessage handleNote(BrainRequest request, LlmIntentResult intentResult) {
@@ -100,6 +113,30 @@ public class ProcessMessageService implements ProcessMessageUseCase {
         ReplyMessage reply = buildReply(request.userId(), "🔄 동기화를 시작했습니다. (컨테이너: " + id + ")");
         replyPort.send(reply);
         return reply;
+    }
+
+    private boolean isAuthCommand(BrainRequest request) {
+        return request.type() == MessageType.CHAT && request.content().trim().startsWith("/auth");
+    }
+
+    private ReplyMessage handleAuthCommand(BrainRequest request) {
+        String[] parts = request.content().trim().split("\\s+", 2);
+        if (parts.length < 2 || parts[1].isBlank()) {
+            String url = googlePort.generateAuthUrl();
+            ReplyMessage reply = buildReply(request.userId(), "🔑 Google 인증 링크: " + url + "\n승인 후 /auth <코드> 로 보내주세요.");
+            replyPort.send(reply);
+            return reply;
+        }
+        try {
+            googlePort.exchangeAuthCode(parts[1].trim());
+            ReplyMessage reply = buildReply(request.userId(), "✅ 인증이 완료되었습니다. 이제 캘린더/할 일을 사용할 수 있습니다.");
+            replyPort.send(reply);
+            return reply;
+        } catch (RuntimeException e) {
+            ReplyMessage reply = buildReply(request.userId(), "⚠️ 인증 코드 처리에 실패했습니다. 다시 시도해주세요.");
+            replyPort.send(reply);
+            return reply;
+        }
     }
 
     private ReplyMessage buildReply(String userId, String content) {

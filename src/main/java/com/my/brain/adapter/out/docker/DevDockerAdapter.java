@@ -21,7 +21,7 @@ public class DevDockerAdapter implements DockerPort {
     public String runSyncContainer() {
         String id = "mock-" + System.currentTimeMillis();
         running.put(id, true);
-        log.infof("[DEV MOCK] run sync container: %s", id);
+        log.infof("[DEV MOCK] run sync container: %s (image: dev-mock, wait: immediate)", id);
         return id;
     }
 

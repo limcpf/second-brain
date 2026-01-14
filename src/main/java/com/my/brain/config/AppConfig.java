@@ -72,11 +72,27 @@ public interface AppConfig {
         String host();
 
         @WithName("image")
-        @WithDefault("obsidian-livesync-client:latest")
+        @WithDefault("lscr.io/linuxserver/obsidian:latest")
         String image();
 
         @WithName("sync-wait-seconds")
-        @WithDefault("180")
+        @WithDefault("30")
         int syncWaitSeconds();
+
+        @WithName("config-path")
+        @WithDefault("./data/obsidian-config")
+        String configPath();
+
+        @WithName("puid")
+        @WithDefault("1000")
+        String puid();
+
+        @WithName("pgid")
+        @WithDefault("1000")
+        String pgid();
+
+        @WithName("timezone")
+        @WithDefault("Etc/UTC")
+        String timezone();
     }
 }

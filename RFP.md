@@ -116,7 +116,7 @@ JSON
 
 처리가 완료된 후 사용자에게 알림이 필요한 경우 사용합니다.
 
-- **Routing Key:** `telegram.res.reply`
+- **Routing Key:** `brain.reply.exchange`
     
 
 JSON
@@ -174,9 +174,9 @@ JSON
         
 - **Docker 제어 로직:**
     
-    - 이미지: `obsidian-livesync-client:latest` (Headless 설정됨).
+    - 이미지: `lscr.io/linuxserver/obsidian:latest` (KasmVNC GUI 기반).
         
-    - 동작: 컨테이너 실행 -> **180초 Sleep** -> 컨테이너 강제 종료 및 삭제.
+    - 동작: 컨테이너 실행 -> **30초 대기** (웹 UI/동기화 준비) -> 컨테이너 종료/삭제.
         
 - **환경 분리:**
     
@@ -359,7 +359,7 @@ Nix
   
   # 시스템 부팅 시 Sync Worker 이미지를 미리 Pull 해두는 스크립트 예시
   system.activationScripts.pullSyncImage = ''
-    ${pkgs.docker}/bin/docker pull my-repo/obsidian-livesync-client:latest
+    ${pkgs.docker}/bin/docker pull lscr.io/linuxserver/obsidian:latest
   '';
 }
 ```

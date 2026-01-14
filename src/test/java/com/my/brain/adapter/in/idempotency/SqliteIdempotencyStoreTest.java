@@ -126,12 +126,32 @@ class SqliteIdempotencyStoreTest {
 
                 @Override
                 public String image() {
-                    return "obsidian-livesync-client:latest";
+                    return "lscr.io/linuxserver/obsidian:latest";
                 }
 
                 @Override
                 public int syncWaitSeconds() {
-                    return 180;
+                    return 30;
+                }
+
+                @Override
+                public String configPath() {
+                    return "./data/obsidian-config";
+                }
+
+                @Override
+                public String puid() {
+                    return "1000";
+                }
+
+                @Override
+                public String pgid() {
+                    return "1000";
+                }
+
+                @Override
+                public String timezone() {
+                    return "Etc/UTC";
                 }
             };
         }
