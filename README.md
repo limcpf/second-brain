@@ -7,6 +7,7 @@
 - [실행 프로필](#실행-프로필)
 - [필수 환경변수](#필수-환경변수)
 - [RabbitMQ 연동 스펙](#rabbitmq-연동-스펙)
+- [텔레그램 입력 메시지](#텔레그램-입력-메시지)
 - [Docker 동기화 스펙](#docker-동기화-스펙)
 - [애플리케이션 설정(app.*)](#애플리케이션-설정app)
 - [배포/운영 가이드](#배포운영-가이드)
@@ -46,6 +47,11 @@ OBSIDIAN_CONFIG_PATH=/app/data/obsidian-config
 OBSIDIAN_PUID=1000
 OBSIDIAN_PGID=1000
 OBSIDIAN_TZ=Asia/Seoul
+
+# Telegram
+TELEGRAM_BOT_TOKEN=xxxx
+TELEGRAM_POLL_INTERVAL_SECONDS=5
+TELEGRAM_POLL_TIMEOUT_SECONDS=30
 ```
 - `VAULT_PATH`, `OBSIDIAN_CONFIG_PATH`: 호스트 경로가 실제 존재해야 하며 퍼미션은 `PUID/PGID`에 맞춰야 합니다.
 - `SYNC_WAIT_SECONDS`: 현재는 기동 후 대기(30초) 뒤 종료. 향후 헬스체크 폴링으로 대체 예정이면 타임아웃값으로 활용 가능합니다.
@@ -78,6 +84,20 @@ mp.messaging.outgoing.brain-replies.exchange.name=brain.reply.exchange
 - 프로듀서: `adapter/out/reply/RabbitReplyProducer`에서 `@Channel("brain-replies")` 사용, 메시지 바디는 ReplyMessage JSON.
 - 라우팅키 설계: reply 측이 topic 교환기를 사용하므로 구독자는 `brain.reply.#` 등 와일드카드로 바인딩하거나, 위 `default-routing-key`를 명시해 교환기-큐 매핑을 고정하십시오. per-message 키가 필요하면 `OutgoingRabbitMQMetadata.withRoutingKey(...)`를 사용할 수 있습니다.
 
+### 텔레그램 중계 큐 (운영 브로커 기준)
+- 송신(타 서비스 → 텔레그램): exchange `telegram.exchange`, 큐 `telegram.outgoing.q`, 라우팅키 `telegram.outgoing`
+  - JSON 페이로드 스키마: `{ "chatId": 123456789, "text": "hello", "parseMode": "Markdown" }`
+  - 예시 발행(`rabbitmqadmin`): `rabbitmqadmin publish exchange=telegram.exchange routing_key=telegram.outgoing payload='{"chatId":123456789,"text":"hello","parseMode":"Markdown"}'`
+- 수신(텔레그램 → RabbitMQ): 워커가 `getUpdates` 폴링 후 exchange `telegram.exchange`에 라우팅키 `telegram.incoming`으로 게시
+  - 페이로드 예: `{ "updateId":123, "chatId":123456789, "from":"username", "text":"/todo", "epochSeconds":1700000000 }`
+- 폴링 설정(선택): `app.telegram.poll-interval-seconds`(기본 5초, env `TELEGRAM_POLL_INTERVAL_SECONDS`), `app.telegram.poll-timeout-seconds`(기본 30초, env `TELEGRAM_POLL_TIMEOUT_SECONDS`), 봇 토큰 `TELEGRAM_BOT_TOKEN`
+
+## 텔레그램 입력 메시지
+- 텔레그램 봇 없이도 `telegram.exchange`에 직접 발행하여 워커 파이프라인을 구동할 수 있습니다.
+- 토폴로지: exchange `telegram.exchange`, 라우팅키 `telegram.incoming`, 바인딩 큐 예시 `telegram.incoming.q`
+- 페이로드 계약: `{ "updateId":long, "chatId":long, "from":string, "text":string, "epochSeconds":long }` (빈 `text` 거부, `updateId` 단조 증가 권장)
+- 발행 예시와 상세 가이드는 `docs/telegram-input.md`를 참고하세요.
+
 ## Docker 동기화 스펙
 - 이미지: `lscr.io/linuxserver/obsidian:latest` (KasmVNC 기반)
 - 볼륨: `/vault` ← `${VAULT_PATH}`, `/config` ← `${OBSIDIAN_CONFIG_PATH}`
@@ -105,6 +125,10 @@ app.docker.puid=${OBSIDIAN_PUID}
 app.docker.pgid=${OBSIDIAN_PGID}
 app.docker.timezone=${OBSIDIAN_TZ}
 
+app.telegram.bot-token=${TELEGRAM_BOT_TOKEN}
+app.telegram.poll-interval-seconds=${TELEGRAM_POLL_INTERVAL_SECONDS:5}
+app.telegram.poll-timeout-seconds=${TELEGRAM_POLL_TIMEOUT_SECONDS:30}
+
 app.idempotency.backend=sqlite
 app.idempotency.path=/app/data/idempotency.log
 app.idempotency.sqlite-path=/app/data/idempotency.db
@@ -117,10 +141,16 @@ quarkus.datasource.jdbc.max-size=2
 ```
 
 ## 배포/운영 가이드
-- 프로필: `QUARKUS_PROFILE=prod`
-- 필수 마운트: `/var/run/docker.sock`, `${VAULT_PATH}`, `${OBSIDIAN_CONFIG_PATH}`, 템플릿 경로
-- RabbitMQ 접근성 확인 및 교환기/큐 선행 선언 여부 검증 (auto-bind-dlq 사용 시 브로커 권한 필요)
-- 로그: MDC 상관관계 ID를 활용하여 요청-응답 추적
+- 프로필/환경: `QUARKUS_PROFILE=prod` 설정 후 `RABBITMQ_HOST/USER/PASS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_POLL_INTERVAL_SECONDS`, `TELEGRAM_POLL_TIMEOUT_SECONDS`, `VAULT_PATH`, `OBSIDIAN_CONFIG_PATH`, `GOOGLE_CREDENTIAL_PATH` 등을 주입합니다.
+- RabbitMQ 사전 준비(운영 브로커):
+  - exchange/queue 선언: `telegram.exchange`(topic), `telegram.outgoing.q`(bind `telegram.outgoing`), `telegram.incoming` 라우팅키용 구독자 큐. 요청/응답/ DLQ 설정도 운영 정책에 맞게 선행 선언.
+  - 예시(`rabbitmqadmin`):
+    - `rabbitmqadmin declare exchange name=telegram.exchange type=topic durable=true`
+    - `rabbitmqadmin declare queue name=telegram.outgoing.q durable=true`
+    - `rabbitmqadmin declare binding source=telegram.exchange destination_type=queue destination=telegram.outgoing.q routing_key=telegram.outgoing`
+- 마운트/권한: `/var/run/docker.sock`, `${VAULT_PATH}`, `${OBSIDIAN_CONFIG_PATH}`, 템플릿 경로를 읽기/쓰기 가능하게 마운트합니다.
+- 실행: Docker 런타임 기준 `docker run --env-file <env> -e QUARKUS_PROFILE=prod -v /var/run/docker.sock:/var/run/docker.sock -v ${VAULT_PATH}:${VAULT_PATH} -v ${OBSIDIAN_CONFIG_PATH}:${OBSIDIAN_CONFIG_PATH} <image>` 형태로 기동합니다.
+- 검증: 기동 후 `telegram.exchange`에 테스트 메시지 발행 → 텔레그램 수신 확인, `health`/로그에서 vault·template 경로 확인, MDC 상관관계 ID로 요청-응답을 추적합니다.
 - 헬스체크: `WorkerReadinessCheck`가 vault/template 경로 존재 여부를 보고 (prod에서 미존재 시 실패)
 
 ## 오프라인 빌드/문제해결
@@ -134,6 +164,8 @@ quarkus.datasource.jdbc.max-size=2
 - `src/main/java/com/my/brain/adapter/out/reply/RabbitReplyProducer.java`: Reply 프로듀서 구현, 라우팅키 커스터마이즈 시 참고
 - `src/main/java/com/my/brain/adapter/out/docker/ProdDockerAdapter.java`: Docker 컨테이너 기동/정리 플로우, 볼륨/포트/환경변수 적용부
 - `src/main/java/com/my/brain/config/ConfigValidator.java`: 프로필별 필수 경로/자격 검증 로직
+- `docs/telegram-input.md`: 텔레그램 입력 메시지 발행 가이드
+- `docs/contracts.md`: 텔레그램 봇 ↔ 워커 메시징 계약 상세
 
 ## Google OAuth 최초 인증 절차 (메신저 무관, RabbitMQ 응답)
 1. `/app/config/tokens`에 `client_secret.json`을 마운트합니다.
@@ -160,6 +192,11 @@ OBSIDIAN_CONFIG_PATH=/app/data/obsidian-config
 OBSIDIAN_PUID=1000
 OBSIDIAN_PGID=1000
 OBSIDIAN_TZ=Asia/Seoul
+
+# Telegram
+TELEGRAM_BOT_TOKEN=xxxx
+TELEGRAM_POLL_INTERVAL_SECONDS=5
+TELEGRAM_POLL_TIMEOUT_SECONDS=30
 ```
 
 ## 추가 설정(app.*)
@@ -180,6 +217,10 @@ app.docker.config-path=${OBSIDIAN_CONFIG_PATH}
 app.docker.puid=${OBSIDIAN_PUID}
 app.docker.pgid=${OBSIDIAN_PGID}
 app.docker.timezone=${OBSIDIAN_TZ}
+
+app.telegram.bot-token=${TELEGRAM_BOT_TOKEN}
+app.telegram.poll-interval-seconds=${TELEGRAM_POLL_INTERVAL_SECONDS:5}
+app.telegram.poll-timeout-seconds=${TELEGRAM_POLL_TIMEOUT_SECONDS:30}
 
 app.idempotency.backend=sqlite
 app.idempotency.path=/app/data/idempotency.log
