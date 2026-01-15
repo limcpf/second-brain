@@ -155,5 +155,25 @@ class SqliteIdempotencyStoreTest {
                 }
             };
         }
+
+        @Override
+        public TelegramConfig telegram() {
+            return new TelegramConfig() {
+                @Override
+                public Optional<String> botToken() {
+                    return Optional.empty();
+                }
+
+                @Override
+                public int pollIntervalSeconds() {
+                    return 1;
+                }
+
+                @Override
+                public int pollTimeoutSeconds() {
+                    return 1;
+                }
+            };
+        }
     }
 }

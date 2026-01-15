@@ -21,6 +21,8 @@ public interface AppConfig {
 
     DockerConfig docker();
 
+    TelegramConfig telegram();
+
     interface OpenAiConfig {
         @WithName("api-key")
         Optional<String> apiKey();
@@ -94,5 +96,18 @@ public interface AppConfig {
         @WithName("timezone")
         @WithDefault("Etc/UTC")
         String timezone();
+    }
+
+    interface TelegramConfig {
+        @WithName("bot-token")
+        Optional<String> botToken();
+
+        @WithName("poll-interval-seconds")
+        @WithDefault("5")
+        int pollIntervalSeconds();
+
+        @WithName("poll-timeout-seconds")
+        @WithDefault("30")
+        int pollTimeoutSeconds();
     }
 }
